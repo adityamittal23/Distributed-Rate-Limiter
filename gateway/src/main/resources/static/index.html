@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Distributed Rate Limiter - Live Real-Time Visualizer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
+    @keyframes pulse-fast {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.02); }
+    }
+    .animate-pulse-fast { animation: pulse-fast 0.8s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-4px); }
+      40%, 80% { transform: translateX(4px); }
+    }
+    .shake-animation { animation: shake 0.4s ease-in-out; }
+    .token-block {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased selection:bg-indigo-500 selection:text-white pb-12">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="font-extrabold text-lg leading-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+              Distributed Rate Limiter
+            </h1>
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+              Live Gateway
+            </span>
+          </div>
+          <p class="text-xs text-slate-400">Redis 7 + Atomic Lua Scripts (Token Bucket & Sliding Window)</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center space-x-3">
+        <div class="hidden sm:flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <span class="text-xs font-mono font-medium text-slate-300">Rule: <strong class="text-indigo-400">10 req / 10 sec</strong></span>
+        </div>
+        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          System Healthy
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+    <!-- Top Grid: Live Quota Battery & Metric Counters -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- Live Real-Time Token Bucket Visualizer (Hero Card) -->
+      <div id="quotaCard" class="lg:col-span-7 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-6 sm:p-8 relative overflow-hidden shadow-2xl">
+        
+        <!-- Header Info -->
+        <div class="flex justify-between items-start mb-6">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xs font-bold tracking-wider text-slate-400 uppercase">Real-Time Token Quota Balance</span>
+              <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+              <span class="text-[11px] font-mono text-cyan-400 font-semibold">Ticking Live</span>
+            </div>
+            <div class="flex items-baseline space-x-3 mt-2">
+              <span id="remainingCount" class="text-6xl sm:text-7xl font-black text-emerald-400 font-mono tracking-tight drop-shadow-md">10</span>
+              <span id="maxCapacity" class="text-xl sm:text-2xl text-slate-500 font-mono font-semibold">/ 10 tokens</span>
+            </div>
+          </div>
+          
+          <div class="flex flex-col items-end space-y-1.5">
+            <span id="statusBadge" class="px-3.5 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm">
+              FULL CAPACITY
+            </span>
+            <span id="refillRateBadge" class="text-[11px] font-mono text-slate-400">
+              Refill: <strong class="text-emerald-400">+1 token/sec</strong>
+            </span>
+          </div>
+        </div>
+
+        <!-- 10 Discrete Token Battery Blocks -->
+        <div class="space-y-2 mb-6">
+          <div class="flex justify-between text-[11px] font-mono text-slate-400 font-semibold">
+            <span>Visual Token Vault</span>
+            <span id="tokenFillPercent">100% Filled</span>
+          </div>
+          <div id="tokenGrid" class="grid grid-cols-10 gap-1.5 sm:gap-2">
+            <!-- 10 blocks dynamically rendered via JS -->
+          </div>
+        </div>
+
+        <!-- Continuous Progress Bar -->
+        <div class="w-full bg-slate-950 rounded-full h-3 p-0.5 overflow-hidden border border-slate-800 mb-4 shadow-inner">
+          <div id="quotaBar" class="bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 h-full rounded-full transition-all duration-100 ease-linear shadow-lg" style="width: 100%;"></div>
+        </div>
+
+        <!-- Dynamic Refill Timer & Status Footer -->
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs font-mono text-slate-400 pt-2 border-t border-slate-800/80 gap-2">
+          <div class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-indigo-400 animate-ping"></span>
+            <span id="refillStatusText">Bucket status: <strong class="text-white">Full & Ready</strong></span>
+          </div>
+          <div id="resetCountdown" class="text-slate-300 font-semibold">
+            Next token in: <span id="nextTokenSeconds" class="text-cyan-400 font-bold">0.0s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Metrics Counters -->
+      <div class="lg:col-span-5 grid grid-cols-2 gap-4">
+        
+        <!-- Total Requests -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl">
+          <div class="flex justify-between items-center text-slate-400">
+            <span class="text-xs font-bold uppercase tracking-wider">Total Requests</span>
+            <span class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+            </span>
+          </div>
+          <div class="mt-3">
+            <span id="totalCounter" class="text-3xl sm:text-4xl font-black text-white font-mono">0</span>
+            <p class="text-[11px] text-slate-400 mt-1">Processed by gateway</p>
+          </div>
+        </div>
+
+        <!-- Allowed (200 OK) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl">
+          <div class="flex justify-between items-center text-slate-400">
+            <span class="text-xs font-bold uppercase tracking-wider">Allowed (200 OK)</span>
+            <span class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </div>
+          <div class="mt-3">
+            <span id="allowedCounter" class="text-3xl sm:text-4xl font-black text-emerald-400 font-mono">0</span>
+            <p class="text-[11px] text-slate-400 mt-1">Under quota threshold</p>
+          </div>
+        </div>
+
+        <!-- Blocked (429 Rate Limit) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl">
+          <div class="flex justify-between items-center text-slate-400">
+            <span class="text-xs font-bold uppercase tracking-wider">Blocked (429)</span>
+            <span class="p-2 rounded-lg bg-rose-500/10 text-rose-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+            </span>
+          </div>
+          <div class="mt-3">
+            <span id="blockedCounter" class="text-3xl sm:text-4xl font-black text-rose-400 font-mono">0</span>
+            <p class="text-[11px] text-slate-400 mt-1">Shielded by rate limiter</p>
+          </div>
+        </div>
+
+        <!-- Average Latency -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl">
+          <div class="flex justify-between items-center text-slate-400">
+            <span class="text-xs font-bold uppercase tracking-wider">Avg Latency</span>
+            <span class="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </span>
+          </div>
+          <div class="mt-3">
+            <span id="avgLatency" class="text-3xl sm:text-4xl font-black text-cyan-300 font-mono">0.0<span class="text-sm font-sans font-normal text-slate-400 ml-1">ms</span></span>
+            <p class="text-[11px] text-slate-400 mt-1">Decision overhead</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Alert / Response Toast Banner -->
+    <div id="alertBanner" class="hidden rounded-2xl border p-4 sm:p-5 transition-all duration-300 shadow-xl">
+      <div class="flex items-center space-x-3.5">
+        <span id="alertIcon" class="text-2xl"></span>
+        <div class="flex-1">
+          <div class="flex items-center space-x-2">
+            <h4 id="alertTitle" class="text-sm font-bold"></h4>
+            <span id="alertStatusTag" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold"></span>
+          </div>
+          <p id="alertMessage" class="text-xs mt-1 font-mono text-slate-300"></p>
+        </div>
+        <span id="alertRetryAfter" class="hidden px-3 py-1.5 rounded-lg bg-black/50 text-xs font-mono font-bold border border-rose-500/30 text-rose-300 animate-pulse"></span>
+      </div>
+    </div>
+
+    <!-- Interactive Traffic Control Center -->
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+      
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-5 gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-white flex items-center space-x-2">
+            <span>🎮 Interactive Traffic Generator</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">
+            Test single calls, fire instant 15-request bursts, or run automated streaming traffic.
+          </p>
+        </div>
+
+        <!-- Identity & Tier Controls -->
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex items-center space-x-1.5 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+            <label class="text-[11px] font-bold text-slate-400 uppercase">Key:</label>
+            <input id="clientIdentity" type="text" value="user-alice" class="bg-transparent text-xs text-indigo-300 font-mono focus:outline-none w-28">
+          </div>
+          
+          <div class="flex items-center space-x-1.5 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+            <label class="text-[11px] font-bold text-slate-400 uppercase">Tier:</label>
+            <select id="userTier" onchange="onTierChanged()" class="bg-transparent text-xs text-white font-mono focus:outline-none">
+              <option value="free" class="bg-slate-900">Free Tier (10 req / 10s)</option>
+              <option value="pro" class="bg-slate-900">Pro Tier (50 req / 10s)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        
+        <!-- Button 1: Single Request -->
+        <button id="btnSendSingle" onclick="sendSingleRequest()" class="flex items-center justify-center space-x-2 py-4 px-6 rounded-2xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-lg shadow-indigo-600/30 active:scale-95 transition-all">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+          <span>🚀 Send 1 Request</span>
+        </button>
+
+        <!-- Button 2: Burst (15 Requests) -->
+        <button id="btnSendBurst" onclick="sendBurstRequests(15)" class="flex items-center justify-center space-x-2 py-4 px-6 rounded-2xl font-bold text-sm bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500 text-white shadow-lg shadow-rose-600/30 active:scale-95 transition-all">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          <span>⚡ Fire Burst (15 Requests)</span>
+        </button>
+
+        <!-- Button 3: Auto Traffic Stream -->
+        <button id="btnAutoTraffic" onclick="toggleAutoTraffic()" class="flex items-center justify-center space-x-2 py-4 px-6 rounded-2xl font-bold text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 active:scale-95 transition-all">
+          <span id="autoIndicator" class="w-2.5 h-2.5 rounded-full bg-slate-500 mr-1"></span>
+          <span id="autoBtnText">Start Auto Stream (3 req/s)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Request Log Table -->
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
+      <div class="px-6 py-5 border-b border-slate-800 flex justify-between items-center">
+        <div>
+          <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+            <span>📡 Real-Time Traffic Stream</span>
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          </h3>
+          <p class="text-xs text-slate-400 mt-0.5">Real-time decisions recorded by the gateway filter</p>
+        </div>
+        <button onclick="clearLogs()" class="text-xs font-semibold text-slate-400 hover:text-white px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">
+          Clear Log
+        </button>
+      </div>
+
+      <div class="overflow-x-auto max-h-96 overflow-y-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-950/80 text-slate-400 uppercase font-mono tracking-wider sticky top-0 border-b border-slate-800 backdrop-blur">
+            <tr>
+              <th class="py-3.5 px-4">#</th>
+              <th class="py-3.5 px-4">Time</th>
+              <th class="py-3.5 px-4">HTTP Status</th>
+              <th class="py-3.5 px-4">Client Key</th>
+              <th class="py-3.5 px-4">Tier</th>
+              <th class="py-3.5 px-4">Remaining</th>
+              <th class="py-3.5 px-4">Latency</th>
+              <th class="py-3.5 px-4">Upstream Response</th>
+            </tr>
+          </thead>
+          <tbody id="logTableBody" class="divide-y divide-slate-800/60 font-mono">
+            <tr id="emptyRow" class="text-slate-500 text-center py-8">
+              <td colspan="8" class="py-10 text-center text-slate-500 font-sans">
+                No requests sent yet. Click <strong>"Send 1 Request"</strong> or <strong>"Fire Burst"</strong> above to see live rate limiting!
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // State
+    let reqIndex = 0;
+    let allowedCount = 0;
+    let blockedCount = 0;
+    let totalLatencyMs = 0;
+    let autoInterval = null;
+
+    // Token Bucket Real-Time Clock State
+    let maxCapacity = 10;
+    let refillPerSec = 1.0; // 1 token every second (10 req/10s)
+    let lastKnownTokens = 10;
+    let lastSyncTimestamp = Date.now();
+
+    // Initialize 10 Visual Token Blocks
+    function renderTokenBlocks(count, max) {
+      const container = document.getElementById('tokenGrid');
+      container.innerHTML = '';
+      const numBlocks = max <= 10 ? max : 10;
+      const ratio = count / max;
+      const filledBlocks = Math.round(ratio * numBlocks);
+
+      for (let i = 0; i < numBlocks; i++) {
+        const div = document.createElement('div');
+        div.className = 'h-8 sm:h-10 rounded-lg border token-block flex items-center justify-center font-mono font-bold text-[10px] sm:text-xs shadow-sm';
+        
+        if (i < filledBlocks) {
+          if (ratio > 0.5) {
+            div.className += ' bg-gradient-to-t from-emerald-600 to-teal-400 border-emerald-400/50 text-emerald-950 shadow-emerald-500/20';
+          } else if (ratio > 0.2) {
+            div.className += ' bg-gradient-to-t from-amber-600 to-yellow-400 border-amber-400/50 text-amber-950 shadow-amber-500/20';
+          } else {
+            div.className += ' bg-gradient-to-t from-rose-600 to-red-400 border-rose-400/50 text-rose-950 shadow-rose-500/20';
+          }
+          div.innerText = (i + 1);
+        } else {
+          div.className += ' bg-slate-950/80 border-slate-800 text-slate-700';
+          div.innerText = '-';
+        }
+        container.appendChild(div);
+      }
+    }
+
+    renderTokenBlocks(10, 10);
+
+    // Continuous Real-Time Token Replenishment Loop (Runs every 50ms)
+    setInterval(() => {
+      const now = Date.now();
+      const elapsedSec = Math.max(0, (now - lastSyncTimestamp) / 1000);
+      const currentExactTokens = Math.min(maxCapacity, lastKnownTokens + (elapsedSec * refillPerSec));
+      const currentIntTokens = Math.floor(currentExactTokens);
+      const pct = Math.max(0, Math.min(100, (currentExactTokens / maxCapacity) * 100));
+
+      // Update UI elements in real time without waiting for clicks!
+      const remElem = document.getElementById('remainingCount');
+      const quotaBar = document.getElementById('quotaBar');
+      const tokenFillPercent = document.getElementById('tokenFillPercent');
+      const statusBadge = document.getElementById('statusBadge');
+      const refillStatusText = document.getElementById('refillStatusText');
+      const nextTokenSeconds = document.getElementById('nextTokenSeconds');
+
+      remElem.innerText = currentIntTokens;
+      quotaBar.style.width = pct + '%';
+      tokenFillPercent.innerText = Math.round(pct) + '% Filled';
+
+      // Re-render blocks
+      renderTokenBlocks(currentIntTokens, maxCapacity);
+
+      if (currentExactTokens >= maxCapacity) {
+        statusBadge.className = 'px-3.5 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+        statusBadge.innerText = 'FULL CAPACITY';
+        refillStatusText.innerHTML = 'Bucket status: <strong class="text-emerald-400">Full & Ready</strong>';
+        nextTokenSeconds.innerText = 'Max';
+      } else {
+        const timeToNext = Math.max(0, (1 - (currentExactTokens - currentIntTokens)) / refillPerSec);
+        nextTokenSeconds.innerText = timeToNext.toFixed(1) + 's';
+        
+        const deficit = maxCapacity - currentExactTokens;
+        const fullIn = Math.ceil(deficit / refillPerSec);
+        refillStatusText.innerHTML = `Replenishing: <strong class="text-cyan-400">+1/sec</strong> (Full in ${fullIn}s)`;
+
+        if (pct > 50) {
+          statusBadge.className = 'px-3.5 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+          statusBadge.innerText = 'ACTIVE';
+        } else if (pct > 20) {
+          statusBadge.className = 'px-3.5 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20';
+          statusBadge.innerText = 'LOW TOKENS';
+        } else {
+          statusBadge.className = 'px-3.5 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/20 animate-pulse';
+          statusBadge.innerText = 'DEPLETED';
+        }
+      }
+    }, 50);
+
+    // Send HTTP Request to Gateway
+    async function sendRequest() {
+      const client = document.getElementById('clientIdentity').value || 'user-alice';
+      const tier = document.getElementById('userTier').value;
+      const startTime = performance.now();
+
+      try {
+        const response = await fetch('/api/hello', {
+          headers: {
+            'X-API-Key': client,
+            'X-User-Tier': tier
+          }
+        });
+
+        const latency = (performance.now() - startTime).toFixed(1);
+        const data = await response.json();
+
+        const limitHeader = response.headers.get('X-RateLimit-Limit');
+        const remainingHeader = response.headers.get('X-RateLimit-Remaining');
+        const retryAfter = response.headers.get('Retry-After');
+
+        if (limitHeader) {
+          maxCapacity = parseInt(limitHeader);
+          document.getElementById('maxCapacity').innerText = `/ ${maxCapacity} tokens`;
+        }
+
+        if (remainingHeader !== null && remainingHeader !== undefined) {
+          // Sync server truth directly into our real-time clock!
+          lastKnownTokens = parseInt(remainingHeader);
+          lastSyncTimestamp = Date.now();
+        }
+
+        reqIndex++;
+        totalLatencyMs += parseFloat(latency);
+        document.getElementById('totalCounter').innerText = reqIndex;
+        document.getElementById('avgLatency').innerHTML = `${(totalLatencyMs / reqIndex).toFixed(1)}<span class="text-sm font-sans font-normal text-slate-400 ml-1">ms</span>`;
+
+        if (response.status === 200) {
+          allowedCount++;
+          document.getElementById('allowedCounter').innerText = allowedCount;
+          showAlert(200, 'HTTP 200 OK — Request Allowed', data.message || 'Upstream responded successfully');
+        } else if (response.status === 429) {
+          blockedCount++;
+          document.getElementById('blockedCounter').innerText = blockedCount;
+          
+          // Trigger shake animation on quota card
+          const card = document.getElementById('quotaCard');
+          card.classList.remove('shake-animation');
+          void card.offsetWidth; // trigger reflow
+          card.classList.add('shake-animation');
+
+          showAlert(429, 'HTTP 429 Too Many Requests — Quota Depleted', data.message, retryAfter);
+        }
+
+        appendLog(reqIndex, response.status, client, tier, lastKnownTokens, maxCapacity, latency, data);
+
+      } catch (err) {
+        console.error('Request error:', err);
+      }
+    }
+
+    async function sendSingleRequest() {
+      await sendRequest();
+    }
+
+    async function sendBurstRequests(count = 15) {
+      const promises = [];
+      for (let i = 0; i < count; i++) {
+        promises.push(sendRequest());
+      }
+      await Promise.all(promises);
+    }
+
+    function toggleAutoTraffic() {
+      const btn = document.getElementById('btnAutoTraffic');
+      const text = document.getElementById('autoBtnText');
+      const indicator = document.getElementById('autoIndicator');
+
+      if (autoInterval) {
+        clearInterval(autoInterval);
+        autoInterval = null;
+        text.innerText = 'Start Auto Stream (3 req/s)';
+        indicator.className = 'w-2.5 h-2.5 rounded-full bg-slate-500 mr-1';
+        btn.classList.remove('border-emerald-500', 'bg-emerald-500/10');
+      } else {
+        autoInterval = setInterval(() => sendRequest(), 333); // 3 req/sec
+        text.innerText = 'Stop Auto Stream (Active)';
+        indicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping mr-1';
+        btn.classList.add('border-emerald-500', 'bg-emerald-500/10');
+      }
+    }
+
+    function onTierChanged() {
+      const tier = document.getElementById('userTier').value;
+      if (tier === 'pro') {
+        maxCapacity = 50;
+        refillPerSec = 5.0;
+        lastKnownTokens = 50;
+        lastSyncTimestamp = Date.now();
+        document.getElementById('maxCapacity').innerText = '/ 50 tokens';
+        document.getElementById('refillRateBadge').innerHTML = 'Refill: <strong class="text-emerald-400">+5 tokens/sec</strong>';
+      } else {
+        maxCapacity = 10;
+        refillPerSec = 1.0;
+        lastKnownTokens = 10;
+        lastSyncTimestamp = Date.now();
+        document.getElementById('maxCapacity').innerText = '/ 10 tokens';
+        document.getElementById('refillRateBadge').innerHTML = 'Refill: <strong class="text-emerald-400">+1 token/sec</strong>';
+      }
+    }
+
+    function showAlert(status, title, message, retryAfter) {
+      const banner = document.getElementById('alertBanner');
+      const titleElem = document.getElementById('alertTitle');
+      const msgElem = document.getElementById('alertMessage');
+      const iconElem = document.getElementById('alertIcon');
+      const tagElem = document.getElementById('alertStatusTag');
+      const retryElem = document.getElementById('alertRetryAfter');
+
+      banner.classList.remove('hidden');
+
+      if (status === 200) {
+        banner.className = 'rounded-2xl border p-4 sm:p-5 bg-emerald-950/40 border-emerald-500/30 text-emerald-300 transition-all';
+        iconElem.innerText = '✅';
+        tagElem.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        tagElem.innerText = '200 OK';
+        retryElem.classList.add('hidden');
+      } else {
+        banner.className = 'rounded-2xl border p-4 sm:p-5 bg-rose-950/40 border-rose-500/30 text-rose-300 animate-pulse-fast transition-all';
+        iconElem.innerText = '🛑';
+        tagElem.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30';
+        tagElem.innerText = '429 BLOCKED';
+        if (retryAfter) {
+          retryElem.innerText = `Retry-After: ${retryAfter}s`;
+          retryElem.classList.remove('hidden');
+        }
+      }
+
+      titleElem.innerText = title;
+      msgElem.innerText = message;
+    }
+
+    function appendLog(idx, status, client, tier, remaining, limit, latency, data) {
+      const tbody = document.getElementById('logTableBody');
+      const emptyRow = document.getElementById('emptyRow');
+      if (emptyRow) emptyRow.remove();
+
+      const tr = document.createElement('tr');
+      tr.className = status === 200 ? 'hover:bg-slate-800/40 transition' : 'bg-rose-500/5 hover:bg-rose-500/10 transition';
+
+      const timeStr = new Date().toLocaleTimeString();
+      const statusBadge = status === 200 
+        ? '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">200 OK</span>'
+        : '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">429 BLOCKED</span>';
+
+      const snippet = data.message ? (data.message.length > 50 ? data.message.substring(0, 50) + '...' : data.message) : JSON.stringify(data);
+
+      tr.innerHTML = `
+        <td class="py-3 px-4 text-slate-500">${idx}</td>
+        <td class="py-3 px-4 text-slate-400">${timeStr}</td>
+        <td class="py-3 px-4">${statusBadge}</td>
+        <td class="py-3 px-4 text-slate-300 font-semibold">${client}</td>
+        <td class="py-3 px-4 text-slate-400 uppercase">${tier}</td>
+        <td class="py-3 px-4"><span class="${remaining == 0 ? 'text-rose-400 font-bold' : 'text-slate-300'}">${remaining}</span> / ${limit}</td>
+        <td class="py-3 px-4 text-cyan-400 font-semibold">${latency} ms</td>
+        <td class="py-3 px-4 text-slate-400 truncate max-w-xs">${snippet}</td>
+      `;
+
+      tbody.insertBefore(tr, tbody.firstChild);
+
+      if (tbody.children.length > 25) {
+        tbody.removeChild(tbody.lastChild);
+      }
+    }
+
+    function clearLogs() {
+      const tbody = document.getElementById('logTableBody');
+      tbody.innerHTML = `
+        <tr id="emptyRow" class="text-slate-500 text-center py-8">
+          <td colspan="8" class="py-10 text-center text-slate-500 font-sans">
+            Log cleared. Click <strong>"Send 1 Request"</strong> to send new traffic!
+          </td>
+        </tr>
+      `;
+    }
+  </script>
+</body>
+</html>

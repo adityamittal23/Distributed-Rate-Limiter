@@ -1,0 +1,68 @@
+package com.distributed.ratelimiter.redis;
+
+import com.distributed.ratelimiter.core.AlgorithmType;
+import com.distributed.ratelimiter.core.RateLimitResult;
+import com.distributed.ratelimiter.core.RateLimiter;
+
+/**
+ * Distributed Fixed Window Rate Limiter backed by Redis and an atomic Lua script.
+ */
+public class RedisFixedWindowRateLimiter implements RateLimiter {
+
+    private static final String SCRIPT_PATH = "lua/fixed_window.lua";
+
+    private final RedisLuaScriptExecutor scriptExecutor;
+    private final String ruleId;
+    private final long limit;
+    private final long windowDurationMs;
+
+    public RedisFixedWindowRateLimiter(
+            RedisLuaScriptExecutor scriptExecutor,
+            String ruleId,
+            long limit,
+            long windowDurationMs
+    ) {
+        if (limit <= 0) {
+            throw new IllegalArgumentException("Limit must be positive");
+        }
+        if (windowDurationMs <= 0) {
+            throw new IllegalArgumentException("Window duration must be positive");
+        }
+        this.scriptExecutor = scriptExecutor;
+        this.ruleId = ruleId;
+        this.limit = limit;
+        this.windowDurationMs = windowDurationMs;
+    }
+
+    @Override
+    public RateLimitResult tryAcquire(String identity, long cost) {
+        if (cost <= 0) {
+            throw new IllegalArgumentException("Cost must be positive");
+        }
+        String key = RedisKeyFormatter.formatKey(ruleId, identity, AlgorithmType.FIXED_WINDOW);
+        String[] keys = new String[]{ key };
+        String[] args = new String[]{
+                String.valueOf(limit),
+                String.valueOf(windowDurationMs),
+                String.valueOf(cost)
+        };
+        return scriptExecutor.executeRateLimitScript(SCRIPT_PATH, keys, args);
+    }
+
+    @Override
+    public AlgorithmType getAlgorithmType() {
+        return AlgorithmType.FIXED_WINDOW;
+    }
+
+    public String getRuleId() {
+        return ruleId;
+    }
+
+    public long getLimit() {
+        return limit;
+    }
+
+    public long getWindowDurationMs() {
+        return windowDurationMs;
+    }
+}

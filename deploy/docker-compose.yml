@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: rl-nginx-lb
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - gateway-1
+      - gateway-2
+      - gateway-3
+    networks:
+      - rl-network
+
+  gateway-1:
+    build:
+      context: ..
+      dockerfile: gateway/Dockerfile
+    container_name: rl-gateway-1
+    environment:
+      - SERVER_PORT=8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - UPSTREAM_BACKEND_URL=http://demo-backend:8080
+      - INSTANCE_ID=gw-1
+    depends_on:
+      - redis
+      - demo-backend
+    ports:
+      - "8080:8080"
+    networks:
+      - rl-network
+
+  gateway-2:
+    build:
+      context: ..
+      dockerfile: gateway/Dockerfile
+    container_name: rl-gateway-2
+    environment:
+      - SERVER_PORT=8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - UPSTREAM_BACKEND_URL=http://demo-backend:8080
+      - INSTANCE_ID=gw-2
+    depends_on:
+      - redis
+      - demo-backend
+    networks:
+      - rl-network
+
+  gateway-3:
+    build:
+      context: ..
+      dockerfile: gateway/Dockerfile
+    container_name: rl-gateway-3
+    environment:
+      - SERVER_PORT=8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - UPSTREAM_BACKEND_URL=http://demo-backend:8080
+      - INSTANCE_ID=gw-3
+    depends_on:
+      - redis
+      - demo-backend
+    networks:
+      - rl-network
+
+  demo-backend:
+    build:
+      context: ..
+      dockerfile: demo-backend/Dockerfile
+    container_name: rl-demo-backend
+    environment:
+      - SERVER_PORT=8080
+    networks:
+      - rl-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: rl-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --save "" --appendonly no
+    networks:
+      - rl-network
+
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    container_name: rl-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - rl-network
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: rl-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - rl-network
+
+networks:
+  rl-network:
+    driver: bridge

@@ -1,0 +1,75 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: rate-limiter-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+
+gateway:
+  upstream-backend-url: ${UPSTREAM_BACKEND_URL:http://localhost:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+    prometheus:
+      enabled: true
+
+ratelimiter:
+  enabled: true
+  defaultFailurePolicy: FAIL_OPEN
+
+  hotKey:
+    enabled: true
+    cacheDurationSeconds: 5
+    maximumSize: 50000
+
+  rules:
+    - id: api-default
+      match: /api/**
+      method: "*"
+      key: api-key
+      algorithm: token-bucket
+      failurePolicy: FAIL_OPEN
+      capacity: 10
+      refillPerSecond: 1.0
+      limit: 10
+      windowSeconds: 10
+      tiers:
+        free:
+          capacity: 10
+          refillPerSecond: 1.0
+          limit: 10
+          windowSeconds: 10
+        pro:
+          capacity: 50
+          refillPerSecond: 5.0
+          limit: 50
+          windowSeconds: 10
+
+    - id: auth-login
+      match: /auth/login
+      method: POST
+      key: ip
+      algorithm: sliding-window-counter
+      failurePolicy: FAIL_CLOSED
+      limit: 5
+      windowSeconds: 60
+
+    - id: public-info
+      match: /public/**
+      method: GET
+      key: ip
+      algorithm: fixed-window
+      failurePolicy: FAIL_OPEN
+      limit: 20
+      windowSeconds: 60

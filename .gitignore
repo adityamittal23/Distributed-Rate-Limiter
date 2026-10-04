@@ -1,0 +1,133 @@
+# ==============================================================================
+# Comprehensive .gitignore for Distributed Rate Limiter Project
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Maven Build Artifacts & Packaging
+# ------------------------------------------------------------------------------
+target/
+**/target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+.flattened-pom.xml
+
+# ------------------------------------------------------------------------------
+# 2. Java Compiled Binaries & Packages
+# ------------------------------------------------------------------------------
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+
+# ------------------------------------------------------------------------------
+# 3. Logs, Diagnostics & Crash Dumps
+# ------------------------------------------------------------------------------
+*.log
+logs/
+**/logs/
+hs_err_pid*
+replay_pid*
+
+# ------------------------------------------------------------------------------
+# 4. IDE: Eclipse / Spring Tool Suite (STS)
+# ------------------------------------------------------------------------------
+.project
+.classpath
+.settings/
+**/.settings/
+.springBeans
+.factorypath
+bin/
+**/bin/
+tmp/
+**/tmp/
+
+# ------------------------------------------------------------------------------
+# 5. IDE: IntelliJ IDEA
+# ------------------------------------------------------------------------------
+.idea/
+**/.idea/
+*.iml
+**/*.iml
+*.iws
+*.ipr
+out/
+**/out/
+
+# ------------------------------------------------------------------------------
+# 6. IDE: Visual Studio Code
+# ------------------------------------------------------------------------------
+.vscode/
+**/.vscode/
+*.code-workspace
+.history/
+
+# ------------------------------------------------------------------------------
+# 7. IDE: NetBeans
+# ------------------------------------------------------------------------------
+**/nbproject/private/
+**/build/
+**/nbbuild/
+**/dist/
+**/nbdist/
+.nb-gradle/
+
+# ------------------------------------------------------------------------------
+# 8. Local Environment & Secret Files
+# ------------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+*.env
+!*.env.example
+docker-compose.override.yml
+
+# ------------------------------------------------------------------------------
+# 9. Postman Local App Cache (keep postman/ collections committed)
+# ------------------------------------------------------------------------------
+.postman/
+
+# ------------------------------------------------------------------------------
+# 10. Node / Load Testing Tooling (k6, artillery, etc.)
+# ------------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ------------------------------------------------------------------------------
+# 11. Operating System Metadata
+# ------------------------------------------------------------------------------
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+
+# ------------------------------------------------------------------------------
+# 12. Local Workspace Temp Files & Screenshots
+# ------------------------------------------------------------------------------
+Screenshot*.png
+.antigravity/
+.gemini/
