@@ -222,7 +222,7 @@ X-RateLimit-Remaining: 99
 #### Observability & Monitoring Links
 - **Nginx Gateway LB:** http://localhost:80
 - **Prometheus:** http://localhost:9090
-- **Grafana Dashboard:** http://localhost:3000 (User: `admin`, Password: `admin`)
+- **Grafana Dashboard:** http://localhost:3000
 
 ---
 
